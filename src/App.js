@@ -10,6 +10,43 @@ import {
 } from "@ionic/react";
 import { useEffect, useRef } from "react";
 
+function drawWave(context, width, height, buffer) {
+  const dx = width / buffer.length;
+  context.save();
+  context.translate(0, height / 2);
+  context.scale(1, -1);
+  context.strokeStyle = "white";
+  context.lineWidth = 3;
+  context.beginPath();
+  buffer.forEach((v, i) => {
+    const x = dx * i;
+    const y = (v * height) / 2;
+    if (i === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+  });
+  context.stroke();
+  context.restore();
+}
+
+function drawSpectrum(context, width, height, buffer) {
+  const dx = width / buffer.length;
+  context.save();
+  context.translate(0, height);
+  context.scale(1, -1);
+  context.fillStyle = "blue";
+  context.beginPath();
+  buffer.forEach((v, i) => {
+    const x = dx * i;
+    const y = (v + 140) * 8;
+    context.fillRect(x, 0, dx, y);
+  });
+  context.stroke();
+  context.restore();
+}
+
 export default function App() {
   const canvasRef = useRef();
   const wrapperRef = useRef();
@@ -24,26 +61,13 @@ export default function App() {
       const analyserNode = analyserNodeRef.current;
       if (analyserNode) {
         const buffer = new Float32Array(analyserNode.frequencyBinCount);
-        context.save();
         context.clearRect(0, -canvas.height / 2, canvas.width, canvas.height);
-        canvas.width = wrapper.clientWidth;
-        canvas.height = wrapper.clientHeight;
-        context.translate(0, canvas.height / 2);
+        const width = (canvas.width = wrapper.clientWidth);
+        const height = (canvas.height = wrapper.clientHeight);
+        analyserNode.getFloatFrequencyData(buffer);
+        drawSpectrum(context, width, height, buffer);
         analyserNode.getFloatTimeDomainData(buffer);
-        context.strokeStyle = "white";
-        context.beginPath();
-        const dx = canvas.width / buffer.length;
-        buffer.forEach((v, i) => {
-          const x = dx * i;
-          const y = (v * canvas.height) / 2;
-          if (i === 0) {
-            context.moveTo(x, y);
-          } else {
-            context.lineTo(x, y);
-          }
-        });
-        context.stroke();
-        context.restore();
+        drawWave(context, width, height, buffer);
       }
       requestAnimationFrame(render);
     }
