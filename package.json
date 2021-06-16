@@ -4,6 +4,7 @@
   "description": "",
   "scripts": {
     "build": "craco build",
+    "deploy": "npm run build && gh-pages -d build",
     "start": "craco start"
   },
   "repository": {
@@ -16,6 +17,7 @@
   "bugs": {
     "url": "https://github.com/vdslab/otamatone/issues"
   },
+  "homepage": "https://vdslab.github.io/otamatone/",
   "dependencies": {
     "@ionic/react": "^5.6.9",
     "react": "^17.0.2",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "craco": "^0.0.3",
+    "gh-pages": "^3.2.1",
     "prettier": "^2.3.1",
     "react-scripts": "^4.0.3"
   },
