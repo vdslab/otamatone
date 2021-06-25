@@ -1,63 +1,106 @@
 import {
   IonApp,
   IonButton,
+  IonButtons,
   IonContent,
   IonHeader,
   IonItem,
   IonLabel,
   IonList,
   IonMenu,
+  IonMenuButton,
   IonPage,
   IonRange,
+  IonSelect,
+  IonSelectOption,
   IonSplitPane,
   IonToolbar,
 } from "@ionic/react";
 import { useEffect, useRef, useState } from "react";
 
-function drawWave(context, width, height, buffer) {
-  const dx = width / buffer.length;
+function drawWave(context, width, height, buffer, color) {
+  const maxR = Math.min(width, height) / 2;
   context.save();
-  context.translate(0, height / 2);
-  context.scale(1, -1);
-  context.strokeStyle = "white";
+  context.translate(width / 2, height / 2);
+  context.strokeStyle = color;
   context.lineWidth = 3;
   context.beginPath();
   buffer.forEach((v, i) => {
-    const x = dx * i;
-    const y = (v * height) / 2;
+    const t = (Math.PI * 2 * i) / buffer.length;
+    const r = maxR * ((2 * v) / 255 - 1) + maxR / 2;
+    const x = r * Math.cos(t);
+    const y = r * Math.sin(t);
     if (i === 0) {
       context.moveTo(x, y);
     } else {
       context.lineTo(x, y);
     }
   });
+  context.closePath();
   context.stroke();
   context.restore();
 }
 
-function drawSpectrum(context, width, height, buffer) {
-  const dx = width / buffer.length;
+function drawSpectrum(context, width, height, buffer, color) {
+  const maxR = Math.min(width, height);
+  const dt = (2 * Math.PI) / buffer.length;
   context.save();
-  context.translate(0, height);
-  context.scale(1, -1);
-  context.fillStyle = "blue";
-  context.beginPath();
+  context.translate(width / 2, height / 2);
+  context.fillStyle = color;
   buffer.forEach((v, i) => {
-    const x = dx * i;
-    const y = (1 + v / 128) * height;
-    context.fillRect(x, 0, dx, y);
+    const t = dt * i;
+    const r = (v / 255) * maxR;
+    const x1 = r * Math.cos(t);
+    const y1 = r * Math.sin(t);
+    const x2 = r * Math.cos(t + dt);
+    const y2 = r * Math.sin(t + dt);
+    context.beginPath();
+    context.moveTo(0, 0);
+    context.lineTo(x1, y1);
+    context.lineTo(x2, y2);
+    context.closePath();
+    context.fill();
   });
-  context.stroke();
   context.restore();
+}
+
+function getColor(buffer) {
+  let maxIndex = 0;
+  for (let i = 1; i < buffer.length; ++i) {
+    if (buffer[i] > buffer[maxIndex]) {
+      maxIndex = i;
+    }
+  }
+  const threshold = 50;
+  let count = 0;
+  for (const v of buffer) {
+    if (v > threshold) {
+      count += 1;
+    }
+  }
+  count /= buffer.length;
+  return `hsl(${240 - Math.min(1, count * 1.5) * 240},100%,50%)`;
 }
 
 export default function App() {
   const canvasRef = useRef();
   const wrapperRef = useRef();
   const audioRef = useRef();
+  const [filterType, setFilterType] = useState("allpass");
   const [delay, setDelay] = useState(0.25);
   const [feedback, setFeedback] = useState(0.4);
   const [mix, setMix] = useState(0.4);
+
+  const filterTypes = [
+    "lowpass",
+    "highpass",
+    "bandpass",
+    "lowshelf",
+    "highshelf",
+    "peaking",
+    "notch",
+    "allpass",
+  ];
 
   useEffect(() => {
     function render() {
@@ -72,11 +115,12 @@ export default function App() {
           const width = canvas.width;
           const height = canvas.height;
           const { analyserNode } = audioRef.current;
-          const buffer = new Float32Array(analyserNode.frequencyBinCount);
-          analyserNode.getFloatFrequencyData(buffer);
-          drawSpectrum(context, width, height, buffer);
-          analyserNode.getFloatTimeDomainData(buffer);
-          drawWave(context, width, height, buffer);
+          const buffer = new Uint8Array(analyserNode.frequencyBinCount);
+          analyserNode.getByteFrequencyData(buffer);
+          const color = getColor(buffer);
+          drawSpectrum(context, width, height, buffer, color);
+          analyserNode.getByteTimeDomainData(buffer);
+          drawWave(context, width, height, buffer, "white");
         }
       }
       requestAnimationFrame(render);
@@ -92,6 +136,28 @@ export default function App() {
           </IonHeader>
           <IonContent>
             <IonList>
+              <IonItem>
+                <IonLabel>BiquadFilter</IonLabel>
+                <IonSelect
+                  interface="popover"
+                  value={filterType}
+                  onIonChange={(event) => {
+                    const filterType = event.target.value;
+                    setFilterType(filterType);
+                    if (audioRef.current) {
+                      audioRef.current.biquadFilterNode.type = filterType;
+                    }
+                  }}
+                >
+                  {filterTypes.map((item) => {
+                    return (
+                      <IonSelectOption key={item} value={item}>
+                        {item}
+                      </IonSelectOption>
+                    );
+                  })}
+                </IonSelect>
+              </IonItem>
               <IonItem>
                 <IonLabel>Delay</IonLabel>
                 <IonRange
@@ -148,6 +214,9 @@ export default function App() {
               expand="block"
               onClick={async () => {
                 const context = new AudioContext();
+                console.log(context.sampleRate);
+                const biquadFilterNode = context.createBiquadFilter();
+                biquadFilterNode.type = filterType;
                 const inputGainNode = context.createGain();
                 const delayNode = context.createDelay();
                 delayNode.delayTime.value = delay;
@@ -160,11 +229,14 @@ export default function App() {
                 const outputGainNode = context.createGain();
                 const analyserNode = context.createAnalyser();
                 analyserNode.fftSize = 2048;
+                analyserNode.smoothingTimeConstant = 0.85;
+                analyserNode.minDecibels = -90;
+                analyserNode.maxDecibels = -10;
                 const stream = await navigator.mediaDevices.getUserMedia({
                   audio: true,
                 });
                 const source = context.createMediaStreamSource(stream);
-                source.connect(inputGainNode);
+                source.connect(biquadFilterNode).connect(inputGainNode);
                 inputGainNode
                   .connect(delayNode)
                   .connect(wetGainNode)
@@ -176,6 +248,7 @@ export default function App() {
                   .connect(context.destination);
                 audioRef.current = {
                   context,
+                  biquadFilterNode,
                   inputGainNode,
                   delayNode,
                   wetGainNode,
@@ -192,7 +265,11 @@ export default function App() {
         </IonMenu>
         <IonPage id="main">
           <IonHeader>
-            <IonToolbar></IonToolbar>
+            <IonToolbar>
+              <IonButtons>
+                <IonMenuButton></IonMenuButton>
+              </IonButtons>
+            </IonToolbar>
           </IonHeader>
           <IonContent ref={wrapperRef}>
             <canvas ref={canvasRef} />
