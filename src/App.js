@@ -213,8 +213,8 @@ export default function App() {
               color="light"
               expand="block"
               onClick={async () => {
-                const context = new AudioContext();
-                console.log(context.sampleRate);
+                const context = new (AudioContext ||
+                  window.webkitAudioContext)();
                 const biquadFilterNode = context.createBiquadFilter();
                 biquadFilterNode.type = filterType;
                 const inputGainNode = context.createGain();
